@@ -1,0 +1,235 @@
+{
+  "best_model_name": "Random Forest",
+  "best_model_key": "Random Forest",
+  "needs_scaling": false,
+  "feature_columns": [
+    "Age",
+    "Systolic BP",
+    "Diastolic",
+    "BS",
+    "Body Temp",
+    "BMI",
+    "Previous Complications",
+    "Preexisting Diabetes",
+    "Gestational Diabetes",
+    "Mental Health",
+    "Heart Rate"
+  ],
+  "all_metrics": [
+    {
+      "Model": "Random Forest",
+      "Accuracy": 0.9872,
+      "Precision": 0.9894,
+      "Recall": 0.9789,
+      "F1 Score": 0.9841,
+      "ROC AUC": 0.9996
+    },
+    {
+      "Model": "SVM (tuned)",
+      "Accuracy": 0.9786,
+      "Precision": 0.9891,
+      "Recall": 0.9579,
+      "F1 Score": 0.9733,
+      "ROC AUC": 0.9942
+    },
+    {
+      "Model": "KNN (k=3)",
+      "Accuracy": 0.9744,
+      "Precision": 0.9785,
+      "Recall": 0.9579,
+      "F1 Score": 0.9681,
+      "ROC AUC": 0.9869
+    },
+    {
+      "Model": "Logistic Regression",
+      "Accuracy": 0.9701,
+      "Precision": 0.9783,
+      "Recall": 0.9474,
+      "F1 Score": 0.9626,
+      "ROC AUC": 0.9969
+    },
+    {
+      "Model": "Decision Tree",
+      "Accuracy": 0.953,
+      "Precision": 0.9565,
+      "Recall": 0.9263,
+      "F1 Score": 0.9412,
+      "ROC AUC": 0.9711
+    }
+  ],
+  "confusion_matrices": {
+    "Logistic Regression": [
+      [
+        137,
+        2
+      ],
+      [
+        5,
+        90
+      ]
+    ],
+    "Decision Tree": [
+      [
+        135,
+        4
+      ],
+      [
+        7,
+        88
+      ]
+    ],
+    "Random Forest": [
+      [
+        138,
+        1
+      ],
+      [
+        2,
+        93
+      ]
+    ],
+    "KNN": [
+      [
+        137,
+        2
+      ],
+      [
+        4,
+        91
+      ]
+    ],
+    "SVM": [
+      [
+        138,
+        1
+      ],
+      [
+        4,
+        91
+      ]
+    ]
+  },
+  "feature_importance": [
+    {
+      "Feature": "BMI",
+      "Importance": 0.19392072806154567
+    },
+    {
+      "Feature": "BS",
+      "Importance": 0.18980171657513997
+    },
+    {
+      "Feature": "Preexisting Diabetes",
+      "Importance": 0.18596373802764285
+    },
+    {
+      "Feature": "Heart Rate",
+      "Importance": 0.16020877460371155
+    },
+    {
+      "Feature": "Mental Health",
+      "Importance": 0.08745618927554545
+    },
+    {
+      "Feature": "Gestational Diabetes",
+      "Importance": 0.08161452066245316
+    },
+    {
+      "Feature": "Previous Complications",
+      "Importance": 0.03225429505421156
+    },
+    {
+      "Feature": "Systolic BP",
+      "Importance": 0.024112292237956436
+    },
+    {
+      "Feature": "Age",
+      "Importance": 0.02022060778756101
+    },
+    {
+      "Feature": "Diastolic",
+      "Importance": 0.017482767811449522
+    },
+    {
+      "Feature": "Body Temp",
+      "Importance": 0.006964369902782781
+    }
+  ],
+  "class_mapping": {
+    "0": "Low Risk",
+    "1": "High Risk"
+  },
+  "dataset_size": 1169,
+  "class_distribution": {
+    "Low": 696,
+    "High": 473
+  },
+  "feature_ranges": {
+    "Age": {
+      "min": 10.0,
+      "max": 65.0,
+      "mean": 27.573139435414884,
+      "median": 25.0
+    },
+    "Systolic BP": {
+      "min": 70.0,
+      "max": 200.0,
+      "mean": 116.83746792130026,
+      "median": 120.0
+    },
+    "Diastolic": {
+      "min": 40.0,
+      "max": 140.0,
+      "mean": 77.24037639007699,
+      "median": 80.0
+    },
+    "BS": {
+      "min": 3.0,
+      "max": 19.0,
+      "mean": 7.5229940119760474,
+      "median": 6.9
+    },
+    "Body Temp": {
+      "min": 97.0,
+      "max": 103.0,
+      "mean": 98.40290846877673,
+      "median": 98.0
+    },
+    "BMI": {
+      "min": 0.0,
+      "max": 37.0,
+      "mean": 23.355603079555177,
+      "median": 23.0
+    },
+    "Previous Complications": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.1787852865697177,
+      "median": 0.0
+    },
+    "Preexisting Diabetes": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.2934131736526946,
+      "median": 0.0
+    },
+    "Gestational Diabetes": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.11976047904191617,
+      "median": 0.0
+    },
+    "Mental Health": {
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.34046193327630453,
+      "median": 0.0
+    },
+    "Heart Rate": {
+      "min": 58.0,
+      "max": 92.0,
+      "mean": 75.88366124893071,
+      "median": 76.0
+    }
+  }
+}
