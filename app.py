@@ -1,6 +1,6 @@
 """
 Maternal Health Risk Predictor — Unified Production Version
-Combines: Advanced ML Insights + Clean UX Design
+Combines: Advanced ML Insights + Clean UX Design + Advanced ReportLab PDF Engine
 """
 
 import json
@@ -11,10 +11,20 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# ⭐ NEW ADD (PDF EXPORT)
+# ⭐ UPDATED: ADVANCED REPORTLAB IMPORTS
 import io
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from datetime import datetime
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 # ----------------------------------------------------------------------------
 # PAGE CONFIG
@@ -76,58 +86,159 @@ def warn_inputs(age, bmi, sys, dia):
     return warnings
 
 
-# ⭐ NEW ADD (PDF FUNCTION)
-from datetime import datetime
-
+# ⭐ UPDATED: ADVANCED PDF GENERATION ENGINE
 def generate_pdf(pred_text, high, low, inputs):
-
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer)
+
+    doc = SimpleDocTemplate(
+        buffer,
+        rightMargin=30,
+        leftMargin=30,
+        topMargin=30,
+        bottomMargin=30,
+    )
 
     styles = getSampleStyleSheet()
-    content = []
 
-    # ---------------- TITLE ----------------
-    content.append(Paragraph("🏥 Maternal Health Risk Report", styles["Title"]))
-    content.append(Spacer(1, 12))
+    title = styles["Title"]
+    title.alignment = TA_CENTER
 
-    # ---------------- DATE ----------------
-    content.append(Paragraph(f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
-    content.append(Spacer(1, 10))
+    heading = styles["Heading2"]
+    normal = styles["BodyText"]
 
-    # ---------------- PATIENT DATA ----------------
-    content.append(Paragraph("📌 Patient Details", styles["Heading2"]))
+    story = []
+
+    # -------------------------------------------------------
+    # HEADER
+    # -------------------------------------------------------
+    story.append(Paragraph("MATERNAL HEALTH RISK ASSESSMENT REPORT", title))
+    story.append(
+        Paragraph(
+            "<b>AI Assisted Clinical Decision Support Report</b>",
+            styles["Heading3"],
+        )
+    )
+
+    story.append(Spacer(1, 15))
+
+    # -------------------------------------------------------
+    # PATIENT TABLE
+    # -------------------------------------------------------
+    patient_data = [["Parameter", "Value"]]
+
     for k, v in inputs.items():
-        content.append(Paragraph(f"{k}: {v}", styles["Normal"]))
+        patient_data.append([k, str(v)])
 
-    content.append(Spacer(1, 10))
+    table = Table(patient_data, colWidths=[220, 220])
 
-    # ---------------- RESULTS ----------------
-    content.append(Paragraph("📊 Prediction Results", styles["Heading2"]))
-    content.append(Paragraph(f"Final Prediction: {pred_text}", styles["Normal"]))
-    content.append(Paragraph(f"High Risk Probability: {high:.2%}", styles["Normal"]))
-    content.append(Paragraph(f"Low Risk Probability: {low:.2%}", styles["Normal"]))
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.whitesmoke),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]))
 
-    content.append(Spacer(1, 10))
+    story.append(Paragraph("<b>Patient Information</b>", heading))
+    story.append(table)
 
-    # ---------------- INTERPRETATION ----------------
-    content.append(Paragraph("🧠 Clinical Interpretation", styles["Heading2"]))
+    story.append(Spacer(1, 15))
 
+    # -------------------------------------------------------
+    # RESULT
+    # -------------------------------------------------------
     if high > 0.7:
-        msg = "High risk detected. Immediate clinical attention recommended."
+        color = colors.red
     elif high > 0.4:
-        msg = "Moderate risk detected. Monitoring is advised."
+        color = colors.orange
     else:
-        msg = "Low risk detected. Continue routine prenatal care."
+        color = colors.green
 
-    content.append(Paragraph(msg, styles["Normal"]))
+    result = Table([
+        ["Prediction", pred_text],
+        ["High Risk Probability", f"{high:.1%}"],
+        ["Low Risk Probability", f"{low:.1%}"],
+    ], colWidths=[220, 220])
 
-    content.append(Spacer(1, 10))
+    result.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#D9EAD3")),
+        ("BACKGROUND", (1, 0), (1, 0), color),
+        ("TEXTCOLOR", (1, 0), (1, 0), colors.white),
+        ("FONTNAME", (1, 0), (1, 0), "Helvetica-Bold"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
 
-    # ---------------- FOOTER ----------------
-    content.append(Paragraph("⚠️ This report is generated using a machine learning model and is not a substitute for medical advice.", styles["Italic"]))
+    story.append(Paragraph("<b>Prediction Result</b>", heading))
+    story.append(result)
 
-    doc.build(content)
+    story.append(Spacer(1, 15))
+
+    # -------------------------------------------------------
+    # INTERPRETATION
+    # -------------------------------------------------------
+    if high > 0.7:
+        text = """
+        The patient demonstrates a HIGH maternal health risk.
+        Immediate medical evaluation and close antenatal
+        monitoring are strongly recommended.
+        """
+    elif high > 0.4:
+        text = """
+        Moderate maternal risk detected.
+        Follow-up examinations and regular monitoring
+        are advised.
+        """
+    else:
+        text = """
+        Low maternal health risk detected.
+        Continue routine antenatal care and maintain
+        healthy lifestyle practices.
+        """
+
+    story.append(Paragraph("<b>Clinical Interpretation</b>", heading))
+    story.append(Paragraph(text, normal))
+
+    story.append(Spacer(1, 15))
+
+    # -------------------------------------------------------
+    # RECOMMENDATIONS
+    # -------------------------------------------------------
+    story.append(Paragraph("<b>Recommendations</b>", heading))
+
+    recommendations = """
+    • Maintain scheduled prenatal visits.<br/>
+    • Monitor blood pressure regularly.<br/>
+    • Maintain blood glucose control.<br/>
+    • Follow a balanced diet.<br/>
+    • Seek immediate medical care if severe symptoms occur.
+    """
+
+    story.append(Paragraph(recommendations, normal))
+
+    story.append(Spacer(1, 20))
+
+    # -------------------------------------------------------
+    # SIGNATURE & METADATA
+    # -------------------------------------------------------
+    story.append(Paragraph("Doctor Signature: __________________________", normal))
+    story.append(Spacer(1, 15))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}", normal))
+    story.append(Paragraph("Report ID: MH-" + datetime.now().strftime("%Y%m%d%H%M"), normal))
+    story.append(Spacer(1, 20))
+
+    story.append(Paragraph(
+        "<font size=9 color='gray'>"
+        "This report is generated using an AI model and is intended "
+        "for educational purposes only. It should not replace "
+        "professional medical diagnosis."
+        "</font>",
+        normal
+    ))
+
+    doc.build(story)
     buffer.seek(0)
     return buffer
 
@@ -175,7 +286,6 @@ st.sidebar.info(
 if page == "Predict Risk":
 
     st.markdown('<div class="main-header">Maternal Health Risk Predictor</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">AI-powered pregnancy risk estimation tool</div>', unsafe_allow_html=True)
 
     with st.form("form"):
 
@@ -251,19 +361,32 @@ if page == "Predict Risk":
             m2.metric("Low Risk", f"{low:.1%}")
             m3.metric("Confidence", f"{max(proba):.1%}")
 
-            # ⭐ NEW ADD — PDF DOWNLOAD BUTTON
+            # ⭐ REPORT GENERATION & DOWNLOAD BUTTON
             st.markdown("### 📄 Download Report")
 
             pdf_buffer = generate_pdf(
                 pred_text=label,
                 high=high,
-                low=low
+                low=low,
+                inputs={
+                    "Age": age,
+                    "Systolic BP": sys,
+                    "Diastolic BP": dia,
+                    "Heart Rate": hr,
+                    "BMI": bmi,
+                    "Blood Sugar": bs,
+                    "Body Temperature": temp,
+                    "Previous Complications": "Yes" if prev else "No",
+                    "Preexisting Diabetes": "Yes" if dm else "No",
+                    "Gestational Diabetes": "Yes" if gdm else "No",
+                    "Mental Health Concerns": "Yes" if mh else "No",
+                }
             )
 
             st.download_button(
                 label="📥 Download PDF Report",
                 data=pdf_buffer,
-                file_name="maternal_health_report.pdf",
+                file_name=f"maternal_health_report_{datetime.now().strftime('%Y%m%d%H%M')}.pdf",
                 mime="application/pdf"
             )
 
