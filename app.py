@@ -11,6 +11,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+# ⭐ NEW ADD (PDF EXPORT)
+import io
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+
 # ----------------------------------------------------------------------------
 # PAGE CONFIG
 # ----------------------------------------------------------------------------
@@ -69,6 +74,62 @@ def warn_inputs(age, bmi, sys, dia):
     if sys > 180 or dia > 120:
         warnings.append("Severely high blood pressure detected.")
     return warnings
+
+
+# ⭐ NEW ADD (PDF FUNCTION)
+from datetime import datetime
+
+def generate_pdf(pred_text, high, low, inputs):
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer)
+
+    styles = getSampleStyleSheet()
+    content = []
+
+    # ---------------- TITLE ----------------
+    content.append(Paragraph("🏥 Maternal Health Risk Report", styles["Title"]))
+    content.append(Spacer(1, 12))
+
+    # ---------------- DATE ----------------
+    content.append(Paragraph(f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    content.append(Spacer(1, 10))
+
+    # ---------------- PATIENT DATA ----------------
+    content.append(Paragraph("📌 Patient Details", styles["Heading2"]))
+    for k, v in inputs.items():
+        content.append(Paragraph(f"{k}: {v}", styles["Normal"]))
+
+    content.append(Spacer(1, 10))
+
+    # ---------------- RESULTS ----------------
+    content.append(Paragraph("📊 Prediction Results", styles["Heading2"]))
+    content.append(Paragraph(f"Final Prediction: {pred_text}", styles["Normal"]))
+    content.append(Paragraph(f"High Risk Probability: {high:.2%}", styles["Normal"]))
+    content.append(Paragraph(f"Low Risk Probability: {low:.2%}", styles["Normal"]))
+
+    content.append(Spacer(1, 10))
+
+    # ---------------- INTERPRETATION ----------------
+    content.append(Paragraph("🧠 Clinical Interpretation", styles["Heading2"]))
+
+    if high > 0.7:
+        msg = "High risk detected. Immediate clinical attention recommended."
+    elif high > 0.4:
+        msg = "Moderate risk detected. Monitoring is advised."
+    else:
+        msg = "Low risk detected. Continue routine prenatal care."
+
+    content.append(Paragraph(msg, styles["Normal"]))
+
+    content.append(Spacer(1, 10))
+
+    # ---------------- FOOTER ----------------
+    content.append(Paragraph("⚠️ This report is generated using a machine learning model and is not a substitute for medical advice.", styles["Italic"]))
+
+    doc.build(content)
+    buffer.seek(0)
+    return buffer
 
 
 # ----------------------------------------------------------------------------
@@ -141,7 +202,6 @@ if page == "Predict Risk":
 
     if submit:
 
-        # ---------------- warnings ----------------
         for w in warn_inputs(age, bmi, sys, dia):
             st.warning(w)
 
@@ -164,10 +224,10 @@ if page == "Predict Risk":
         pred = model.predict(X)[0]
         proba = model.predict_proba(X)[0]
         high = proba[1]
+        low = proba[0]
 
         st.markdown("---")
 
-        # ---------------- RESULT ----------------
         col1, col2 = st.columns([1.2, 1])
 
         with col1:
@@ -188,10 +248,25 @@ if page == "Predict Risk":
 
             m1, m2, m3 = st.columns(3)
             m1.metric("High Risk", f"{high:.1%}")
-            m2.metric("Low Risk", f"{proba[0]:.1%}")
+            m2.metric("Low Risk", f"{low:.1%}")
             m3.metric("Confidence", f"{max(proba):.1%}")
 
-        # ---------------- GAUGE ----------------
+            # ⭐ NEW ADD — PDF DOWNLOAD BUTTON
+            st.markdown("### 📄 Download Report")
+
+            pdf_buffer = generate_pdf(
+                pred_text=label,
+                high=high,
+                low=low
+            )
+
+            st.download_button(
+                label="📥 Download PDF Report",
+                data=pdf_buffer,
+                file_name="maternal_health_report.pdf",
+                mime="application/pdf"
+            )
+
         with col2:
             fig = go.Figure(go.Indicator(
                 mode="gauge+number",
@@ -209,7 +284,6 @@ if page == "Predict Risk":
             ))
             st.plotly_chart(fig, use_container_width=True)
 
-        # ---------------- FEATURE IMPORTANCE ----------------
         st.markdown("### 🧠 Key Contributing Factors")
         fi = pd.DataFrame(metadata["feature_importance"]).head(6)
 
@@ -252,7 +326,6 @@ elif page == "Model Insights":
             use_container_width=True
         )
 
-    # ---------------- CONFUSION MATRICES ----------------
     st.markdown("### 🔍 Confusion Matrices")
 
     cols = st.columns(len(metadata["confusion_matrices"]))
@@ -270,7 +343,6 @@ elif page == "Model Insights":
                 use_container_width=True
             )
 
-    # ---------------- FEATURE IMPORTANCE ----------------
     st.markdown("### 🧠 Feature Importance (Best Model)")
     st.plotly_chart(
         px.bar(pd.DataFrame(metadata["feature_importance"]),
@@ -281,7 +353,6 @@ elif page == "Model Insights":
         use_container_width=True
     )
 
-    # ---------------- DATASET ----------------
     df = load_dataset()
 
     st.markdown("### 📂 Dataset Overview")
