@@ -13,6 +13,12 @@ from patient vitals and medical history, built from a data science project compa
 - **Predict Risk** — enter a patient's vitals (age, blood pressure, blood sugar,
   BMI, heart rate, etc.) and get an instant risk prediction with confidence scores
   and a visual gauge.
+- **Patient-specific explanation (SHAP)** — for every prediction, see exactly which
+  of _this patient's_ values pushed the result toward Low or High risk — not just
+  which features matter on average across the dataset.
+- **Downloadable PDF report** — generates a clinical-style PDF summary of the
+  patient's inputs, prediction, and top contributing factors.
+- **Light/dark mode toggle** — switch themes from the sidebar.
 - **Model Insights** — compare performance (accuracy, precision, recall, F1, ROC AUC)
   across 5 trained models: Logistic Regression, Decision Tree, Random Forest,
   tuned KNN, and tuned SVM. Includes confusion matrices, feature importance, and
@@ -23,6 +29,8 @@ from patient vitals and medical history, built from a data science project compa
 
 - **Python** — model training and app logic
 - **scikit-learn** — Logistic Regression, Decision Tree, Random Forest, KNN, SVM
+- **SHAP** — per-patient model explanations
+- **ReportLab** — PDF report generation
 - **Streamlit** — web interface
 - **Plotly** — interactive charts (gauges, bar charts, confusion matrices, heatmaps)
 - **pandas / numpy** — data processing
@@ -82,16 +90,16 @@ The app will open at `http://localhost:8501`.
 
 ## Model performance summary
 
-| Model | Accuracy | F1 Score |
-|---|---|---|
-| Random Forest | ~0.987 | ~0.984 |
-| SVM (tuned) | ~0.979 | ~0.973 |
-| KNN (tuned) | ~0.974 | ~0.968 |
-| Logistic Regression | ~0.970 | ~0.963 |
-| Decision Tree | ~0.953 | ~0.941 |
+| Model               | Accuracy | F1 Score |
+| ------------------- | -------- | -------- |
+| Random Forest       | ~0.987   | ~0.984   |
+| SVM (tuned)         | ~0.979   | ~0.973   |
+| KNN (tuned)         | ~0.974   | ~0.968   |
+| Logistic Regression | ~0.970   | ~0.963   |
+| Decision Tree       | ~0.953   | ~0.941   |
 
-*(Exact values are recalculated each time `train_model.py` runs; see the in-app
-Model Insights page for live numbers.)*
+_(Exact values are recalculated each time `train_model.py` runs; see the in-app
+Model Insights page for live numbers.)_
 
 ## Disclaimer
 
