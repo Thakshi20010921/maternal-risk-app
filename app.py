@@ -25,9 +25,9 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-# ----------------------------------------------------------------------------
+
 # PAGE CONFIG
-# ----------------------------------------------------------------------------
+
 st.set_page_config(
     page_title="Maternal Health Risk Predictor",
     page_icon="🩺",
@@ -35,9 +35,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ----------------------------------------------------------------------------
+
 # THEME STATE
-# ----------------------------------------------------------------------------
+
 if "theme" not in st.session_state:
     st.session_state.theme = "dark"
 
@@ -74,9 +74,9 @@ THEMES = {
 T = THEMES[st.session_state.theme]
 PLOT_TEMPLATE = T["plot_template"]
 
-# ----------------------------------------------------------------------------
+
 # GLOBAL PLOTLY LAYOUT DEFAULTS — keeps charts on-theme (no white boxes)
-# ----------------------------------------------------------------------------
+
 def themed(fig, height=None):
     fig.update_layout(
         template=PLOT_TEMPLATE,
@@ -92,9 +92,9 @@ def themed(fig, height=None):
     return fig
 
 
-# ----------------------------------------------------------------------------
+
 # STYLING
-# ----------------------------------------------------------------------------
+
 st.markdown(
     f"""
     <style>
@@ -236,9 +236,9 @@ st.markdown(
 )
 
 
-# ----------------------------------------------------------------------------
+
 # HELPERS
-# ----------------------------------------------------------------------------
+
 def risk_label(p):
     if p < 0.4:
         return "🟢 Low Risk"
@@ -258,9 +258,9 @@ def warn_inputs(age, bmi, sys, dia):
     return warnings
 
 
-# ----------------------------------------------------------------------------
+
 # PDF GENERATION ENGINE
-# ----------------------------------------------------------------------------
+
 def generate_pdf(pred_text, high, low, inputs, top_factors=None):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -378,9 +378,9 @@ def generate_pdf(pred_text, high, low, inputs, top_factors=None):
     return buffer
 
 
-# ----------------------------------------------------------------------------
+
 # LOAD ARTIFACTS
-# ----------------------------------------------------------------------------
+
 @st.cache_resource
 def load_artifacts():
     model = joblib.load("models/best_model.pkl")
@@ -406,9 +406,9 @@ explainer = load_shap_explainer(model)
 FEATURES = metadata["feature_columns"]
 BEST_MODEL = metadata["best_model_name"]
 
-# ----------------------------------------------------------------------------
+
 # SIDEBAR
-# ----------------------------------------------------------------------------
+
 st.sidebar.title("🩺 Navigation")
 page = st.sidebar.radio("Go to", ["Predict Risk", "Model Insights", "About"])
 
@@ -435,9 +435,9 @@ st.sidebar.caption(
     "⚠️ Educational/portfolio project — not a substitute for professional medical advice."
 )
 
-# ----------------------------------------------------------------------------
+
 # PAGE 1 — PREDICT
-# ----------------------------------------------------------------------------
+
 if page == "Predict Risk":
 
     st.markdown('<div class="main-header">Maternal Health Risk Predictor</div>', unsafe_allow_html=True)
@@ -601,31 +601,116 @@ if page == "Predict Risk":
             mime="application/pdf",
         )
 
-# ----------------------------------------------------------------------------
+
 # PAGE 2 — MODEL INSIGHTS
-# ----------------------------------------------------------------------------
+
 elif page == "Model Insights":
 
     st.markdown('<div class="main-header">Model Performance Dashboard</div>', unsafe_allow_html=True)
 
     metrics = pd.DataFrame(metadata["all_metrics"])
-    st.dataframe(metrics, use_container_width=True, hide_index=True)
+    cv_rows = []
+    for row in metadata["all_metrics"]:
+        if "CV" in row:
+            cv_rows.append({
+                "Model": row["Model"],
+                "CV Mean Accuracy": row["CV"]["cv_mean"],
+                "CV Std Dev": row["CV"]["cv_std"],
+            })
+    metrics_display = metrics.drop(columns=["CV"], errors="ignore")
+    st.dataframe(metrics_display, use_container_width=True, hide_index=True)
 
     c1, c2 = st.columns(2)
     with c1:
-        fig = px.bar(metrics, x="Model", y="Accuracy", text_auto=".3f", color="Model")
-        fig = themed(fig)
-        fig.update_layout(showlegend=False)
+        fig = px.bar(metrics_display, x="Model", y="Accuracy", text_auto=".3f", color="Model")
+        fig.update_layout(template=PLOT_TEMPLATE, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        melted = metrics.melt(id_vars="Model", value_vars=["Precision", "Recall", "F1 Score"],
+        melted = metrics_display.melt(id_vars="Model", value_vars=["Precision", "Recall", "F1 Score"],
                                var_name="Metric", value_name="Score")
         fig = px.bar(melted, x="Model", y="Score", color="Metric", barmode="group")
-        fig = themed(fig)
+        fig.update_layout(template=PLOT_TEMPLATE)
         st.plotly_chart(fig, use_container_width=True)
 
+    # ---------------- Cross-validation ----------------
+    if cv_rows:
+        st.markdown("### 🔁 5-Fold Cross-Validation")
+        st.caption(
+            "A single train/test split can get lucky. Cross-validation re-splits the data "
+            "5 times and reports the average — a more honest estimate of how each model "
+            "generalizes, and a check against overfitting."
+        )
+        cv_df = pd.DataFrame(cv_rows).sort_values("CV Mean Accuracy", ascending=False)
+        fig_cv = go.Figure()
+        fig_cv.add_trace(go.Bar(
+            x=cv_df["Model"],
+            y=cv_df["CV Mean Accuracy"],
+            error_y=dict(type="data", array=cv_df["CV Std Dev"], visible=True),
+            marker_color=T["accent"],
+        ))
+        fig_cv.update_layout(
+            template=PLOT_TEMPLATE,
+            height=380,
+            yaxis_title="Mean Accuracy (5-fold CV)",
+            yaxis_range=[max(0, cv_df["CV Mean Accuracy"].min() - 0.05), 1.0],
+        )
+        st.plotly_chart(fig_cv, use_container_width=True)
+        st.dataframe(cv_df, use_container_width=True, hide_index=True)
+
+    # ---------------- Calibration curve ----------------
+    if metadata.get("calibration_curve"):
+        st.markdown(f"### 🎯 Calibration Curve ({metadata['best_model_name']})")
+        st.caption(
+            "When the model says '80% confidence', is it actually right about 80% of the "
+            "time? Points on the diagonal line mean the model's probabilities are well "
+            "calibrated, not just confidently overfit."
+        )
+        cal = metadata["calibration_curve"]
+        fig_cal = go.Figure()
+        fig_cal.add_trace(go.Scatter(
+            x=[0, 1], y=[0, 1], mode="lines", name="Perfectly calibrated",
+            line=dict(dash="dash", color=T["text_muted"]),
+        ))
+        fig_cal.add_trace(go.Scatter(
+            x=cal["mean_predicted_prob"], y=cal["fraction_of_positives"],
+            mode="lines+markers", name=metadata["best_model_name"],
+            line=dict(color=T["accent"]), marker=dict(size=8),
+        ))
+        fig_cal.update_layout(
+            template=PLOT_TEMPLATE,
+            height=400,
+            xaxis_title="Mean predicted probability",
+            yaxis_title="Fraction of actual positives",
+            xaxis_range=[0, 1], yaxis_range=[0, 1],
+        )
+        st.plotly_chart(fig_cal, use_container_width=True)
+
+    # ---------------- Precision-Recall curve ----------------
+    if metadata.get("pr_curve"):
+        st.markdown(f"### ⚖️ Precision-Recall Tradeoff ({metadata['best_model_name']})")
+        st.caption(
+            "For a health-risk model, missing a high-risk patient (low recall) and "
+            "wrongly flagging a low-risk patient (low precision) have different costs. "
+            "This shows the tradeoff as the decision threshold changes."
+        )
+        pr = metadata["pr_curve"]
+        fig_pr = go.Figure()
+        fig_pr.add_trace(go.Scatter(
+            x=pr["recall"], y=pr["precision"], mode="lines+markers",
+            line=dict(color=T["accent"]), marker=dict(size=6),
+        ))
+        fig_pr.update_layout(
+            template=PLOT_TEMPLATE,
+            height=400,
+            xaxis_title="Recall (sensitivity to High-risk patients)",
+            yaxis_title="Precision",
+            xaxis_range=[0, 1.02], yaxis_range=[0, 1.02],
+        )
+        st.plotly_chart(fig_pr, use_container_width=True)
+
     st.markdown("### 🔍 Confusion Matrices")
+    
     cols = st.columns(len(metadata["confusion_matrices"]))
     for col, (name, cm) in zip(cols, metadata["confusion_matrices"].items()):
         with col:
@@ -661,9 +746,9 @@ elif page == "Model Insights":
         fig = themed(fig, height=550)
         st.plotly_chart(fig, use_container_width=True)
 
-# ----------------------------------------------------------------------------
+
 # PAGE 3 — ABOUT
-# ----------------------------------------------------------------------------
+
 else:
     st.markdown('<div class="main-header">About This Project</div>', unsafe_allow_html=True)
     st.write(

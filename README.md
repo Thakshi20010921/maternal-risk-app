@@ -71,6 +71,10 @@ streamlit run app.py
 
 The app will open at `http://localhost:8501`.
 
+> **Note:** `requirements.txt` must include `shap` and `reportlab` in addition to the
+> core packages (streamlit, pandas, numpy, scikit-learn, plotly, joblib) — these power
+> the per-patient SHAP explanations and the PDF report download.
+
 ## Deploy to Streamlit Community Cloud (free, public link)
 
 1. Push this folder to a **public GitHub repository**.

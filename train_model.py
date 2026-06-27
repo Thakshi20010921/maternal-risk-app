@@ -23,8 +23,10 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
     confusion_matrix,
+    precision_recall_curve,
 )
-from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.model_selection import GridSearchCV, train_test_split, StratifiedKFold, cross_val_score
+from sklearn.calibration import calibration_curve
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -73,6 +75,17 @@ def evaluate(name, y_test, preds, probs=None):
     return metrics, cm
 
 
+def cross_validate(model, X, y, cv_folds=5):
+    """5-fold stratified CV accuracy — guards against an optimistic single split."""
+    skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=RANDOM_STATE)
+    scores = cross_val_score(model, X, y, cv=skf, scoring="accuracy")
+    return {
+        "cv_mean": round(scores.mean(), 4),
+        "cv_std": round(scores.std(), 4),
+        "cv_scores": [round(s, 4) for s in scores],
+    }
+
+
 def main():
     print("Loading data...")
     df = load_data()
@@ -87,6 +100,10 @@ def main():
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
+    # Separate scaler fit on the FULL dataset, used only for cross-validation scoring.
+    cv_scaler = StandardScaler()
+    X_scaled_full = cv_scaler.fit_transform(X)
+
     all_metrics = []
     all_cms = {}
     fitted_models = {}
@@ -98,6 +115,7 @@ def main():
     pred = lr.predict(X_test_scaled)
     proba = lr.predict_proba(X_test_scaled)[:, 1]
     m, cm = evaluate("Logistic Regression", y_test, pred, proba)
+    m["CV"] = cross_validate(LogisticRegression(max_iter=1000, random_state=RANDOM_STATE), X_scaled_full, y)
     all_metrics.append(m)
     all_cms["Logistic Regression"] = cm
     fitted_models["Logistic Regression"] = lr
@@ -109,6 +127,7 @@ def main():
     pred = dt.predict(X_test)
     proba = dt.predict_proba(X_test)[:, 1]
     m, cm = evaluate("Decision Tree", y_test, pred, proba)
+    m["CV"] = cross_validate(DecisionTreeClassifier(max_depth=5, random_state=RANDOM_STATE), X, y)
     all_metrics.append(m)
     all_cms["Decision Tree"] = cm
     fitted_models["Decision Tree"] = dt
@@ -120,6 +139,7 @@ def main():
     pred = rf.predict(X_test)
     proba = rf.predict_proba(X_test)[:, 1]
     m, cm = evaluate("Random Forest", y_test, pred, proba)
+    m["CV"] = cross_validate(RandomForestClassifier(random_state=RANDOM_STATE, n_estimators=200), X, y)
     all_metrics.append(m)
     all_cms["Random Forest"] = cm
     fitted_models["Random Forest"] = rf
@@ -140,6 +160,7 @@ def main():
     pred = knn.predict(X_test_scaled)
     proba = knn.predict_proba(X_test_scaled)[:, 1]
     m, cm = evaluate(f"KNN (k={grid_knn.best_params_['n_neighbors']})", y_test, pred, proba)
+    m["CV"] = cross_validate(KNeighborsClassifier(n_neighbors=grid_knn.best_params_["n_neighbors"]), X_scaled_full, y)
     all_metrics.append(m)
     all_cms["KNN"] = cm
     fitted_models["KNN"] = knn
@@ -157,6 +178,7 @@ def main():
     pred = svm.predict(X_test_scaled)
     proba = svm.predict_proba(X_test_scaled)[:, 1]
     m, cm = evaluate("SVM (tuned)", y_test, pred, proba)
+    m["CV"] = cross_validate(SVC(probability=True, **grid_svm.best_params_), X_scaled_full, y)
     all_metrics.append(m)
     all_cms["SVM"] = cm
     fitted_models["SVM"] = svm
@@ -176,6 +198,26 @@ def main():
     best_model = fitted_models[best_key]
     needs_scaling = best_key in ("Logistic Regression", "KNN", "SVM")
 
+    # ---- Calibration curve (is "80% confidence" actually right 80% of the time?) ----
+    print("Computing calibration curve for best model...")
+    best_X_test = X_test_scaled if needs_scaling else X_test
+    best_proba_test = best_model.predict_proba(best_X_test)[:, 1]
+    frac_positives, mean_predicted = calibration_curve(y_test, best_proba_test, n_bins=10, strategy="uniform")
+    calibration_data = {
+        "mean_predicted_prob": [round(v, 4) for v in mean_predicted],
+        "fraction_of_positives": [round(v, 4) for v in frac_positives],
+    }
+
+    # ---- Precision-recall curve for best model ----
+    print("Computing precision-recall curve for best model...")
+    precisions, recalls, pr_thresholds = precision_recall_curve(y_test, best_proba_test)
+    step = max(1, len(pr_thresholds) // 50)
+    pr_curve_data = {
+        "precision": [round(v, 4) for v in precisions[:-1][::step]],
+        "recall": [round(v, 4) for v in recalls[:-1][::step]],
+        "thresholds": [round(v, 4) for v in pr_thresholds[::step]],
+    }
+
     # ---- Save artifacts ----
     joblib.dump(best_model, f"{MODEL_DIR}/best_model.pkl")
     joblib.dump(scaler, f"{MODEL_DIR}/scaler.pkl")
@@ -188,6 +230,8 @@ def main():
         "all_metrics": metrics_df.to_dict(orient="records"),
         "confusion_matrices": all_cms,
         "feature_importance": feature_importance,
+        "calibration_curve": calibration_data,
+        "pr_curve": pr_curve_data,
         "class_mapping": {"0": "Low Risk", "1": "High Risk"},
         "dataset_size": len(df),
         "class_distribution": {
@@ -209,6 +253,10 @@ def main():
 
     print(f"\nSaved best model ({best_name}) to {MODEL_DIR}/best_model.pkl")
     print(f"Saved metrics + metadata to {MODEL_DIR}/metrics.json")
+    print(f"\n5-fold CV results (mean accuracy ± std):")
+    for m in all_metrics:
+        if "CV" in m:
+            print(f"  {m['Model']:30s} {m['CV']['cv_mean']:.4f} ± {m['CV']['cv_std']:.4f}")
 
 
 if __name__ == "__main__":
