@@ -41,6 +41,9 @@ st.set_page_config(
 if "theme" not in st.session_state:
     st.session_state.theme = "dark"
 
+if "patient_history" not in st.session_state:
+    st.session_state.patient_history = []
+
 THEMES = {
     "dark": {
         "bg": "#0e1117",
@@ -522,8 +525,7 @@ BEST_MODEL = metadata["best_model_name"]
 # SIDEBAR
 
 st.sidebar.title("🩺 Navigation")
-page = st.sidebar.radio("Go to", ["Predict Risk", "Model Insights", "About"])
-
+page = st.sidebar.radio("Go to", ["Predict Risk", "Patient History", "Model Insights", "About"])
 st.sidebar.markdown("---")
 theme_choice = st.sidebar.toggle("🌙 Dark mode", value=(st.session_state.theme == "dark"))
 new_theme = "dark" if theme_choice else "light"
@@ -690,6 +692,20 @@ if page == "Predict Risk":
 
         top_factors = list(zip(shap_df["Feature"].head(5), shap_df["Effect"].head(5)))
 
+         # ---------------- Save to patient history ----------------
+        st.session_state.patient_history.append({
+            "Time":             datetime.now().strftime("%H:%M:%S"),
+            "Age":              age,
+            "Systolic BP":      sys,
+            "Diastolic BP":     dia,
+            "BMI":              bmi,
+            "Blood Sugar":      bs,
+            "Heart Rate":       hr,
+            "High Risk %":      round(high * 100, 1),
+            "Low Risk %":       round(low * 100, 1),
+            "Prediction":       "High Risk" if pred == 1 else "Low Risk",
+        })
+
         # ---------------- PDF report download ----------------
         st.markdown("### 📄 Download Report")
         pdf_buffer = generate_pdf(
@@ -725,7 +741,126 @@ if page == "Predict Risk":
         )
 
 
-# PAGE 2 — MODEL INSIGHTS
+# PAGE 2 — PATIENT HISTORY
+
+elif page == "Patient History":
+
+    st.markdown('<div class="main-header">📊 Patient History</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sub-header">All predictions made in this session are tracked here.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not st.session_state.patient_history:
+        st.info("No predictions yet. Go to **Predict Risk** and submit a patient to see their history here.")
+
+    else:
+        hist_df = pd.DataFrame(st.session_state.patient_history)
+
+        # --- Summary metrics ---
+        total    = len(hist_df)
+        n_high   = (hist_df["Prediction"] == "High Risk").sum()
+        n_low    = (hist_df["Prediction"] == "Low Risk").sum()
+        avg_risk = hist_df["High Risk %"].mean()
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Patients",   total)
+        m2.metric("High Risk",        n_high)
+        m3.metric("Low Risk",         n_low)
+        m4.metric("Avg High Risk %",  f"{avg_risk:.1f}%")
+
+        st.markdown("---")
+
+        # --- Risk score trend chart ---
+        st.markdown("### 📈 Risk Score Trend")
+        st.caption("How the High Risk % changed across patients entered in this session.")
+
+        hist_df["Patient #"] = range(1, len(hist_df) + 1)
+
+        fig_trend = go.Figure()
+        fig_trend.add_trace(go.Scatter(
+            x=hist_df["Patient #"],
+            y=hist_df["High Risk %"],
+            mode="lines+markers",
+            name="High Risk %",
+            line=dict(color="#e74c3c", width=2),
+            marker=dict(
+                size=10,
+                color=["#e74c3c" if p == "High Risk" else "#2ecc71"
+                       for p in hist_df["Prediction"]],
+                line=dict(width=2, color="white"),
+            ),
+            text=hist_df["Prediction"],
+            hovertemplate=(
+                "<b>Patient %{x}</b><br>"
+                "High Risk: %{y}%<br>"
+                "Result: %{text}<extra></extra>"
+            ),
+        ))
+        fig_trend.add_hline(
+            y=70, line_dash="dash", line_color="#e74c3c",
+            annotation_text="High Risk threshold (70%)",
+            annotation_position="top left",
+        )
+        fig_trend.add_hline(
+            y=40, line_dash="dash", line_color="orange",
+            annotation_text="Moderate threshold (40%)",
+            annotation_position="top left",
+        )
+        fig_trend = themed(fig_trend, height=380)
+        fig_trend.update_layout(
+            xaxis_title="Patient # (order entered)",
+            yaxis_title="High Risk Probability (%)",
+            yaxis_range=[0, 105],
+            xaxis=dict(tickmode="linear", dtick=1),
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+
+        # --- Vitals comparison chart ---
+        st.markdown("### 🩺 Vitals Across Patients")
+        st.caption("Compare key vitals for all patients entered this session.")
+
+        vital_choice = st.selectbox(
+            "Select vital to compare:",
+            ["High Risk %", "Systolic BP", "Diastolic BP", "BMI", "Blood Sugar", "Heart Rate", "Age"],
+        )
+        fig_vital = px.bar(
+            hist_df,
+            x="Patient #",
+            y=vital_choice,
+            color="Prediction",
+            color_discrete_map={"High Risk": "#e74c3c", "Low Risk": "#2ecc71"},
+            text_auto=True,
+        )
+        fig_vital = themed(fig_vital, height=320)
+        fig_vital.update_layout(xaxis=dict(tickmode="linear", dtick=1))
+        st.plotly_chart(fig_vital, use_container_width=True)
+
+        # --- Full history table ---
+        st.markdown("### 📋 Full Session Table")
+        st.dataframe(
+            hist_df.drop(columns=["Patient #"]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        # --- Download history as CSV ---
+        csv = hist_df.drop(columns=["Patient #"]).to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Download Session History as CSV",
+            data=csv,
+            file_name=f"patient_history_{datetime.now().strftime('%Y%m%d%H%M')}.csv",
+            mime="text/csv",
+        )
+
+        # --- Clear history button ---
+        st.markdown("---")
+        if st.button("🗑️ Clear History", type="secondary"):
+            st.session_state.patient_history = []
+            st.rerun()
+
+
+# PAGE 3 — MODEL INSIGHTS
 
 elif page == "Model Insights":
 
