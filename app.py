@@ -261,105 +261,219 @@ def warn_inputs(age, bmi, sys, dia):
 
 # PDF GENERATION ENGINE
 
-def generate_pdf(pred_text, high, low, inputs, top_factors=None):
+def get_personalized_recommendations(raw_values, prev, dm, gdm, mh):
+    """Generate specific recommendations based on which values are abnormal."""
+    recs = []
+
+    if raw_values["sys"] > 140 or raw_values["dia"] > 90:
+        recs.append("HIGH BLOOD PRESSURE detected — reduce salt intake, rest adequately, and consult a doctor immediately.")
+    if raw_values["sys"] > 160 or raw_values["dia"] > 110:
+        recs.append("CRITICALLY HIGH BP — seek emergency medical care without delay.")
+    if raw_values["bs"] > 7.8:
+        recs.append("ELEVATED BLOOD SUGAR — monitor glucose levels daily, follow a low-GI diet, and consult an endocrinologist.")
+    if raw_values["bmi"] > 30:
+        recs.append("HIGH BMI — adopt a balanced diet and light, pregnancy-safe exercise. Consult a dietitian.")
+    if raw_values["bmi"] < 18.5:
+        recs.append("LOW BMI / UNDERWEIGHT — increase nutritional intake with iron-rich and protein-rich foods.")
+    if raw_values["hr"] > 100:
+        recs.append("ELEVATED HEART RATE — avoid caffeine, rest frequently, and report to your doctor if persistent.")
+    if raw_values["temp"] > 99.5:
+        recs.append("ELEVATED BODY TEMPERATURE — monitor for fever; seek medical evaluation if above 100.4°F.")
+    if raw_values["age"] < 18:
+        recs.append("ADOLESCENT PREGNANCY — additional monitoring and nutritional support are especially important.")
+    if raw_values["age"] > 40:
+        recs.append("ADVANCED MATERNAL AGE — schedule more frequent antenatal visits and consider genetic counselling.")
+    if prev:
+        recs.append("PREVIOUS COMPLICATIONS history — inform your obstetric team of all prior pregnancy issues.")
+    if dm:
+        recs.append("PREEXISTING DIABETES — tight glucose control is critical; work closely with your endocrinologist throughout pregnancy.")
+    if gdm:
+        recs.append("GESTATIONAL DIABETES — monitor blood sugar before and after meals; follow your dietitian's meal plan.")
+    if mh:
+        recs.append("MENTAL HEALTH CONCERNS — connect with a perinatal mental health counsellor; emotional support is part of safe care.")
+
+    # Always include these baseline recommendations
+    recs.append("Attend all scheduled prenatal visits and do not skip follow-up appointments.")
+    recs.append("Seek immediate medical care if you experience severe headache, vision changes, chest pain, or reduced fetal movement.")
+
+    return recs
+
+
+def check_vitals_status(raw_values):
+    """Return dict of {label: (value_str, is_abnormal)} for the vitals table."""
+    return {
+        "Age":               (str(raw_values["age"]),     raw_values["age"] < 15 or raw_values["age"] > 45),
+        "Systolic BP":       (str(raw_values["sys"]),     raw_values["sys"] > 140 or raw_values["sys"] < 90),
+        "Diastolic BP":      (str(raw_values["dia"]),     raw_values["dia"] > 90  or raw_values["dia"] < 60),
+        "Heart Rate":        (str(raw_values["hr"]),      raw_values["hr"] > 100  or raw_values["hr"] < 60),
+        "BMI":               (str(raw_values["bmi"]),     raw_values["bmi"] > 30  or raw_values["bmi"] < 18.5),
+        "Blood Sugar":       (str(raw_values["bs"]),      raw_values["bs"] > 7.8  or raw_values["bs"] < 3.9),
+        "Body Temperature":  (str(raw_values["temp"]),    raw_values["temp"] > 99.5),
+    }
+
+
+def generate_pdf(pred_text, high, low, inputs, raw_values=None, patient_name=None, hospital_name=None, top_factors=None):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
-    title = styles["Title"]
-    title.alignment = TA_CENTER
+    title_style = styles["Title"]
+    title_style.alignment = TA_CENTER
     heading = styles["Heading2"]
     normal = styles["BodyText"]
     story = []
 
-    story.append(Paragraph("MATERNAL HEALTH RISK ASSESSMENT REPORT", title))
+    # --- Header ---
+    story.append(Paragraph("MATERNAL HEALTH RISK ASSESSMENT REPORT", title_style))
+    if hospital_name:
+        story.append(Paragraph(f"<b>{hospital_name}</b>", styles["Heading3"]))
     story.append(Paragraph("<b>AI Assisted Clinical Decision Support Report</b>", styles["Heading3"]))
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 10))
 
+    # --- Emergency alert banner ---
+    if raw_values and (raw_values.get("sys", 0) > 160 or raw_values.get("dia", 0) > 110):
+        alert_data = [["⚠️  CRITICAL: Severely elevated blood pressure detected. Seek emergency care immediately."]]
+        alert_table = Table(alert_data, colWidths=[480])
+        alert_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FF0000")),
+            ("TEXTCOLOR",  (0, 0), (-1, -1), colors.white),
+            ("FONTNAME",   (0, 0), (-1, -1), "Helvetica-Bold"),
+            ("FONTSIZE",   (0, 0), (-1, -1), 11),
+            ("ALIGN",      (0, 0), (-1, -1), "CENTER"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING",    (0, 0), (-1, -1), 10),
+        ]))
+        story.append(alert_table)
+        story.append(Spacer(1, 10))
+
+    # --- Patient info ---
+    story.append(Paragraph("<b>Patient Information</b>", heading))
     patient_data = [["Parameter", "Value"]]
+    if patient_name:
+        patient_data.append(["Patient Name / ID", patient_name])
     for k, v in inputs.items():
         patient_data.append([k, str(v)])
-    table = Table(patient_data, colWidths=[220, 220])
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.whitesmoke),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    patient_table = Table(patient_data, colWidths=[240, 240])
+    patient_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND",    (0, 1), (-1, -1), colors.whitesmoke),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
     ]))
-    story.append(Paragraph("<b>Patient Information</b>", heading))
-    story.append(table)
+    story.append(patient_table)
     story.append(Spacer(1, 15))
 
-    if high > 0.7:
-        color = colors.red
-    elif high > 0.4:
-        color = colors.orange
-    else:
-        color = colors.green
-    result = Table([
-        ["Prediction", pred_text],
-        ["High Risk Probability", f"{high:.1%}"],
-        ["Low Risk Probability", f"{low:.1%}"],
-    ], colWidths=[220, 220])
-    result.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#D9EAD3")),
-        ("BACKGROUND", (1, 0), (1, 0), color),
-        ("TEXTCOLOR", (1, 0), (1, 0), colors.white),
-        ("FONTNAME", (1, 0), (1, 0), "Helvetica-Bold"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
+    # --- Color-coded vitals status table ---
+    if raw_values:
+        story.append(Paragraph("<b>Vital Signs Status</b>", heading))
+        story.append(Paragraph(
+            "<font size=9 color='gray'>Values highlighted in red are outside the normal reference range.</font>",
+            normal,
+        ))
+        story.append(Spacer(1, 6))
+        vitals_status = check_vitals_status(raw_values)
+        vitals_data = [["Vital Sign", "Value", "Status"]]
+        vitals_style_cmds = [
+            ("BACKGROUND",    (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.grey),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]
+        for i, (label, (val, abnormal)) in enumerate(vitals_status.items(), start=1):
+            status_text = "ABNORMAL" if abnormal else "Normal"
+            vitals_data.append([label, val, status_text])
+            if abnormal:
+                vitals_style_cmds.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#FDDEDE")))
+                vitals_style_cmds.append(("TEXTCOLOR",  (2, i), (2, i), colors.HexColor("#CC0000")))
+                vitals_style_cmds.append(("FONTNAME",   (2, i), (2, i), "Helvetica-Bold"))
+            else:
+                vitals_style_cmds.append(("TEXTCOLOR",  (2, i), (2, i), colors.HexColor("#207520")))
+        vitals_table = Table(vitals_data, colWidths=[200, 140, 140])
+        vitals_table.setStyle(TableStyle(vitals_style_cmds))
+        story.append(vitals_table)
+        story.append(Spacer(1, 15))
+
+    # --- Prediction result ---
     story.append(Paragraph("<b>Prediction Result</b>", heading))
-    story.append(result)
+    if high > 0.7:
+        result_color = colors.red
+    elif high > 0.4:
+        result_color = colors.orange
+    else:
+        result_color = colors.green
+    result_table = Table([
+        ["Prediction",          pred_text],
+        ["High Risk Probability", f"{high:.1%}"],
+        ["Low Risk Probability",  f"{low:.1%}"],
+    ], colWidths=[240, 240])
+    result_table.setStyle(TableStyle([
+        ("GRID",       (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#D9EAD3")),
+        ("BACKGROUND", (1, 0), (1, 0),  result_color),
+        ("TEXTCOLOR",  (1, 0), (1, 0),  colors.white),
+        ("FONTNAME",   (1, 0), (1, 0),  "Helvetica-Bold"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("ALIGN",      (0, 0), (-1, -1), "CENTER"),
+    ]))
+    story.append(result_table)
     story.append(Spacer(1, 15))
 
+    # --- Top SHAP factors ---
     if top_factors:
-        story.append(Paragraph("<b>Top Factors for This Patient</b>", heading))
+        story.append(Paragraph("<b>Top Factors for This Patient (SHAP)</b>", heading))
         factor_data = [["Feature", "Effect on Risk"]]
         for feat, val in top_factors:
-            direction = "↑ increases risk" if val > 0 else "↓ decreases risk"
+            direction = "increases risk" if val > 0 else "decreases risk"
             factor_data.append([feat, direction])
-        factor_table = Table(factor_data, colWidths=[220, 220])
+        factor_table = Table(factor_data, colWidths=[240, 240])
         factor_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("GRID",       (0, 0), (-1, -1), 0.5, colors.grey),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("ALIGN",      (0, 0), (-1, -1), "CENTER"),
         ]))
         story.append(factor_table)
         story.append(Spacer(1, 15))
 
-    if high > 0.7:
-        text = (
-            "The patient demonstrates a HIGH maternal health risk. "
-            "Immediate medical evaluation and close antenatal monitoring are strongly recommended."
-        )
-    elif high > 0.4:
-        text = "Moderate maternal risk detected. Follow-up examinations and regular monitoring are advised."
-    else:
-        text = (
-            "Low maternal health risk detected. Continue routine antenatal care and maintain "
-            "healthy lifestyle practices."
-        )
+    # --- Clinical interpretation ---
     story.append(Paragraph("<b>Clinical Interpretation</b>", heading))
-    story.append(Paragraph(text, normal))
+    if high > 0.7:
+        interp = ("The patient demonstrates HIGH maternal health risk. "
+                  "Immediate medical evaluation and close antenatal monitoring are strongly recommended.")
+    elif high > 0.4:
+        interp = "Moderate maternal risk detected. Follow-up examinations and regular monitoring are advised."
+    else:
+        interp = ("Low maternal health risk detected. Continue routine antenatal care "
+                  "and maintain healthy lifestyle practices.")
+    story.append(Paragraph(interp, normal))
     story.append(Spacer(1, 15))
 
-    story.append(Paragraph("<b>Recommendations</b>", heading))
-    recommendations = """
-    • Maintain scheduled prenatal visits.<br/>
-    • Monitor blood pressure regularly.<br/>
-    • Maintain blood glucose control.<br/>
-    • Follow a balanced diet.<br/>
-    • Seek immediate medical care if severe symptoms occur.
-    """
-    story.append(Paragraph(recommendations, normal))
+    # --- Personalized recommendations ---
+    story.append(Paragraph("<b>Personalised Recommendations</b>", heading))
+    if raw_values:
+        prev_val = inputs.get("Previous Complications") == "Yes"
+        dm_val   = inputs.get("Preexisting Diabetes") == "Yes"
+        gdm_val  = inputs.get("Gestational Diabetes") == "Yes"
+        mh_val   = inputs.get("Mental Health Concerns") == "Yes"
+        recs = get_personalized_recommendations(raw_values, prev_val, dm_val, gdm_val, mh_val)
+        for rec in recs:
+            story.append(Paragraph(f"• {rec}", normal))
+    else:
+        story.append(Paragraph("• Maintain scheduled prenatal visits.", normal))
+        story.append(Paragraph("• Monitor blood pressure regularly.", normal))
+        story.append(Paragraph("• Maintain blood glucose control.", normal))
+        story.append(Paragraph("• Follow a balanced diet.", normal))
+        story.append(Paragraph("• Seek immediate medical care if severe symptoms occur.", normal))
+
     story.append(Spacer(1, 20))
 
+    # --- Signature + footer ---
     story.append(Paragraph("Doctor Signature: __________________________", normal))
     story.append(Spacer(1, 15))
     story.append(Paragraph(f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}", normal))
@@ -367,8 +481,8 @@ def generate_pdf(pred_text, high, low, inputs, top_factors=None):
     story.append(Spacer(1, 20))
     story.append(Paragraph(
         "<font size=9 color='gray'>"
-        "This report is generated using an AI model and is intended for educational purposes "
-        "only. It should not replace professional medical diagnosis."
+        "This report is generated using an AI model and is intended for educational purposes only. "
+        "It should not replace professional medical diagnosis."
         "</font>",
         normal,
     ))
@@ -376,8 +490,6 @@ def generate_pdf(pred_text, high, low, inputs, top_factors=None):
     doc.build(story)
     buffer.seek(0)
     return buffer
-
-
 
 # LOAD ARTIFACTS
 
@@ -447,6 +559,11 @@ if page == "Predict Risk":
     )
 
     with st.form("form"):
+        with st.expander("👤 Patient Info", expanded=True):
+            pi1, pi2 = st.columns(2)
+            patient_name = pi1.text_input("Patient Name / ID", placeholder="e.g. P-00123 or Jane D.")
+            hospital_name = pi2.text_input("Hospital / Clinic Name", placeholder="e.g. Colombo General Hospital")
+
         with st.expander("🧬 Vitals", expanded=True):
             c1, c2, c3 = st.columns(3)
             age = c1.slider("Age", 10, 65, 25)
@@ -579,6 +696,12 @@ if page == "Predict Risk":
             pred_text=label,
             high=high,
             low=low,
+            patient_name=patient_name,
+            hospital_name=hospital_name,
+            raw_values={
+                "age": age, "sys": sys, "dia": dia,
+                "hr": hr, "bmi": bmi, "bs": bs, "temp": temp,
+            },
             inputs={
                 "Age": age,
                 "Systolic BP": sys,
